@@ -1,152 +1,125 @@
 import pygame
 import os
 import chess
+import random
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-MINIMAX_DEPTH = 2    # 2 plies of look-ahead yields a weak ~300–500 Elo
+MINIMAX_DEPTH = 2
 SQUARE_SIZE   = 60
 BOARD_SIZE    = 8
 WIDTH = HEIGHT = SQUARE_SIZE * BOARD_SIZE
 FPS = 30
 
-# Colors
-LIGHT      = (222,184,135)
-DARK       = (139,69,19)
-HIGHLIGHT  = (0,255,0,100)
-
-# ─── Pygame Setup ────────────────────────────────────────────────────────────
-pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Chess AI by Simon (minimax)")
-clock = pygame.time.Clock()
+LIGHT      = (222, 184, 135)
+DARK       = (139, 69, 19)
 
 # ─── Load Piece Images ───────────────────────────────────────────────────────
-assets = os.path.join(os.path.dirname(__file__),"assets")
+assets = os.path.join(os.path.dirname(__file__), "assets")
 imgs = {}
-for p in ['r','n','b','q','k','p']:
-    for c in ['w','b']:
-        name = c+p
-        img = pygame.image.load(os.path.join(assets,f"{name}.png"))
-        imgs[name] = pygame.transform.scale(img,(SQUARE_SIZE,SQUARE_SIZE))
-
-# ─── Chess Board State ───────────────────────────────────────────────────────
-board = chess.Board()
+for p in ['r', 'n', 'b', 'q', 'k', 'p']:
+    for c in ['w', 'b']:
+        name = c + p
+        img = pygame.image.load(os.path.join(assets, f"{name}.png"))
+        imgs[name] = pygame.transform.scale(img, (SQUARE_SIZE, SQUARE_SIZE))
 
 # ─── Evaluation Function ─────────────────────────────────────────────────────
 PIECE_VALUES = {'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 0}
 def evaluate_material(bd):
-    """Positive = good for White, Negative = good for Black."""
     score = 0
     for sq in chess.SQUARES:
         piece = bd.piece_at(sq)
         if piece:
-            val = PIECE_VALUES[piece.symbol().lower()]
-            score += val if piece.color==chess.WHITE else -val
+            value = PIECE_VALUES[piece.symbol().lower()]
+            score += value if piece.color else -value
     return score
 
-# ─── Minimax with Alpha-Beta ─────────────────────────────────────────────────
-def minimax(bd, depth, alpha, beta, maximizing_player):
+# ─── Minimax Algorithm ───────────────────────────────────────────────────────
+def minimax(bd, depth, maximizing):
     if depth == 0 or bd.is_game_over():
-        return evaluate_material(bd)
-    if maximizing_player:
-        max_eval = -99999
-        for mv in bd.legal_moves:
-            bd.push(mv)
-            val = minimax(bd, depth-1, alpha, beta, False)
-            bd.pop()
-            max_eval = max(max_eval, val)
-            alpha = max(alpha, val)
-            if beta <= alpha:
-                break
-        return max_eval
-    else:
-        min_eval = 99999
-        for mv in bd.legal_moves:
-            bd.push(mv)
-            val = minimax(bd, depth-1, alpha, beta, True)
-            bd.pop()
-            min_eval = min(min_eval, val)
-            beta = min(beta, val)
-            if beta <= alpha:
-                break
-        return min_eval
+        return evaluate_material(bd), None
 
-def find_best_move(bd, depth):
     best_move = None
-    best_value = -99999 if bd.turn==chess.WHITE else 99999
-    for mv in bd.legal_moves:
-        bd.push(mv)
-        val = minimax(bd, depth-1, -99999, 99999, bd.turn==chess.BLACK)
-        bd.pop()
-        if bd.turn==chess.WHITE:
-            if val > best_value:
-                best_value, best_move = val, mv
-        else:
-            if val < best_value:
-                best_value, best_move = val, mv
-    return best_move
+    if maximizing:
+        max_eval = float('-inf')
+        for move in bd.legal_moves:
+            bd.push(move)
+            eval, _ = minimax(bd, depth-1, False)
+            bd.pop()
+            if eval > max_eval:
+                max_eval = eval
+                best_move = move
+        return max_eval, best_move
+    else:
+        min_eval = float('inf')
+        for move in bd.legal_moves:
+            bd.push(move)
+            eval, _ = minimax(bd, depth-1, True)
+            bd.pop()
+            if eval < min_eval:
+                min_eval = eval
+                best_move = move
+        return min_eval, best_move
 
-# ─── Drawing Helpers ─────────────────────────────────────────────────────────
-def draw_board():
+def find_best_move(bd):
+    _, move = minimax(bd, MINIMAX_DEPTH, bd.turn)
+    return move
+
+# ─── Pygame Chess GUI ────────────────────────────────────────────────────────
+def draw_board(scr, bd):
+    colors = [LIGHT, DARK]
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
-            color = LIGHT if (r+c)%2==0 else DARK
-            pygame.draw.rect(screen,color,(c*SQUARE_SIZE,r*SQUARE_SIZE,SQUARE_SIZE,SQUARE_SIZE))
-
-def draw_pieces():
+            color = colors[(r + c) % 2]
+            pygame.draw.rect(scr, color, pygame.Rect(c*SQUARE_SIZE, r*SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
     for sq in chess.SQUARES:
-        p = board.piece_at(sq)
-        if p:
+        piece = bd.piece_at(sq)
+        if piece:
             col = chess.square_file(sq)
             row = 7 - chess.square_rank(sq)
-            key = ('w' if p.color else 'b') + p.symbol().lower()
-            screen.blit(imgs[key],(col*SQUARE_SIZE,row*SQUARE_SIZE))
+            key = ('w' if piece.color else 'b') + piece.symbol().lower()
+            scr.blit(imgs[key], pygame.Rect(col*SQUARE_SIZE, row*SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
 
-def mouse_to_square(pos):
-    x,y = pos
-    col = x//SQUARE_SIZE
-    row = y//SQUARE_SIZE
-    return chess.square(col,7-row), (row,col)
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("Chess AI by Simon")
+    clock = pygame.time.Clock()
 
-# ─── Main Loop ───────────────────────────────────────────────────────────────
-selected = None
+    bd = chess.Board()
+    selected_sq = None
+    running = True
 
-running = True
-while running:
-    draw_board()
-    draw_pieces()
+    while running:
+        draw_board(screen, bd)
+        pygame.display.flip()
 
-    # highlight selection
-    if selected:
-        _, (r,c) = selected
-        s = pygame.Surface((SQUARE_SIZE,SQUARE_SIZE),pygame.SRCALPHA)
-        s.fill(HIGHLIGHT)
-        screen.blit(s,(c*SQUARE_SIZE,r*SQUARE_SIZE))
+        if not bd.is_game_over() and not bd.turn:
+            move = find_best_move(bd)
+            if move:
+                bd.push(move)
 
-    pygame.display.flip()
-    clock.tick(FPS)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                x, y = pygame.mouse.get_pos()
+                col = x // SQUARE_SIZE
+                row = 7 - (y // SQUARE_SIZE)
+                sq = chess.square(col, row)
 
-    for e in pygame.event.get():
-        if e.type==pygame.QUIT:
-            running=False
+                if selected_sq is None:
+                    if bd.piece_at(sq) and bd.piece_at(sq).color == bd.turn:
+                        selected_sq = sq
+                else:
+                    move = chess.Move(selected_sq, sq)
+                    if move in bd.legal_moves:
+                        bd.push(move)
+                    selected_sq = None
 
-        # Human plays White
-        elif e.type==pygame.MOUSEBUTTONDOWN and board.turn==chess.WHITE:
-            sq, rc = mouse_to_square(e.pos)
-            if not selected:
-                p = board.piece_at(sq)
-                if p and p.color==chess.WHITE:
-                    selected = (sq, rc)
-            else:
-                move = chess.Move(selected[0], sq)
-                if move in board.legal_moves:
-                    board.push(move)
-                selected = None
+        clock.tick(FPS)
 
-    # AI plays Black
-    if board.turn==chess.BLACK and not board.is_game_over():
-        ai_move = find_best_move(board, MINIMAX_DEPTH)
-        if ai_move:
-            board.push(ai_move)
+    pygame.quit()
 
-pygame.quit()
+# ─── Run GUI only if directly executed ───────────────────────────────────────
+if __name__ == "__main__":
+    main()
